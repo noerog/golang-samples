@@ -20,8 +20,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
-
-	"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
 )
 
 // parseTemplate applies a given file to the body of the base template.
@@ -48,21 +46,9 @@ type appTemplate struct {
 // information to the base template.
 func (tmpl *appTemplate) Execute(w http.ResponseWriter, r *http.Request, data interface{}) *appError {
 	d := struct {
-		Data        interface{}
-		AuthEnabled bool
-		Profile     *Profile
-		LoginURL    string
-		LogoutURL   string
+		Data interface{}
 	}{
-		Data:        data,
-		AuthEnabled: bookshelf.OAuthConfig != nil,
-		LoginURL:    "/login?redirect=" + r.URL.RequestURI(),
-		LogoutURL:   "/logout?redirect=" + r.URL.RequestURI(),
-	}
-
-	if d.AuthEnabled {
-		// Ignore any errors.
-		d.Profile = profileFromSession(r)
+		Data: data,
 	}
 
 	if err := tmpl.t.Execute(w, d); err != nil {

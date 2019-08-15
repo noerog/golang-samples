@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Sample bookshelf is a fully-featured app demonstrating several Google Cloud APIs, including Datastore, Cloud SQL, Cloud Storage.
-// See https://cloud.google.com/go/getting-started/tutorial-app
+// Sample bookshelf is a fully-featured app demonstrating several Google Cloud
+// APIs, including App Engine, Firestore, Cloud Storage, and Stackdriver.
+// See https://cloud.google.com/go/getting-started/tutorial-app.
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,14 +28,11 @@ import (
 	"path"
 	"strconv"
 
-	"cloud.google.com/go/pubsub"
 	"cloud.google.com/go/storage"
-
+	"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
 	uuid "github.com/gofrs/uuid"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-
-	"github.com/GoogleCloudPlatform/golang-samples/getting-started/bookshelf"
 )
 
 var (
@@ -63,8 +60,6 @@ func registerHandlers() {
 
 	r.Methods("GET").Path("/books").
 		Handler(appHandler(listHandler))
-	r.Methods("GET").Path("/books/mine").
-		Handler(appHandler(listMineHandler))
 	r.Methods("GET").Path("/books/{id:[0-9]+}").
 		Handler(appHandler(detailHandler))
 	r.Methods("GET").Path("/books/add").
@@ -78,15 +73,6 @@ func registerHandlers() {
 		Handler(appHandler(updateHandler))
 	r.Methods("POST").Path("/books/{id:[0-9]+}:delete").
 		Handler(appHandler(deleteHandler)).Name("delete")
-
-	// The following handlers are defined in auth.go and used in the
-	// "Authenticating Users" part of the Getting Started guide.
-	r.Methods("GET").Path("/login").
-		Handler(appHandler(loginHandler))
-	r.Methods("POST").Path("/logout").
-		Handler(appHandler(logoutHandler))
-	r.Methods("GET").Path("/oauth2callback").
-		Handler(appHandler(oauthCallbackHandler))
 
 	// Respond to App Engine and Compute Engine health checks.
 	// Indicate the server is healthy.
@@ -105,23 +91,6 @@ func registerHandlers() {
 // listHandler displays a list with summaries of books in the database.
 func listHandler(w http.ResponseWriter, r *http.Request) *appError {
 	books, err := bookshelf.DB.ListBooks()
-	if err != nil {
-		return appErrorf(err, "could not list books: %v", err)
-	}
-
-	return listTmpl.Execute(w, r, books)
-}
-
-// listMineHandler displays a list of books created by the currently
-// authenticated user.
-func listMineHandler(w http.ResponseWriter, r *http.Request) *appError {
-	user := profileFromSession(r)
-	if user == nil {
-		http.Redirect(w, r, "/login?redirect=/books/mine", http.StatusFound)
-		return nil
-	}
-
-	books, err := bookshelf.DB.ListBooksCreatedBy(user.ID)
 	if err != nil {
 		return appErrorf(err, "could not list books: %v", err)
 	}
@@ -191,20 +160,6 @@ func bookFromForm(r *http.Request) (*bookshelf.Book, error) {
 		CreatedByID:   r.FormValue("createdByID"),
 	}
 
-	// If the form didn't carry the user information for the creator, populate it
-	// from the currently logged in user (or mark as anonymous).
-	if book.CreatedByID == "" {
-		user := profileFromSession(r)
-		if user != nil {
-			// Logged in.
-			book.CreatedBy = user.DisplayName
-			book.CreatedByID = user.ID
-		} else {
-			// Not logged in.
-			book.SetCreatorAnonymous()
-		}
-	}
-
 	return book, nil
 }
 
@@ -256,7 +211,6 @@ func createHandler(w http.ResponseWriter, r *http.Request) *appError {
 	if err != nil {
 		return appErrorf(err, "could not save book: %v", err)
 	}
-	go publishUpdate(id)
 	http.Redirect(w, r, fmt.Sprintf("/books/%d", id), http.StatusFound)
 	return nil
 }
@@ -274,11 +228,9 @@ func updateHandler(w http.ResponseWriter, r *http.Request) *appError {
 	}
 	book.ID = id
 
-	err = bookshelf.DB.UpdateBook(book)
-	if err != nil {
+	if err := bookshelf.DB.UpdateBook(book); err != nil {
 		return appErrorf(err, "could not save book: %v", err)
 	}
-	go publishUpdate(book.ID)
 	http.Redirect(w, r, fmt.Sprintf("/books/%d", book.ID), http.StatusFound)
 	return nil
 }
@@ -295,24 +247,6 @@ func deleteHandler(w http.ResponseWriter, r *http.Request) *appError {
 	}
 	http.Redirect(w, r, "/books", http.StatusFound)
 	return nil
-}
-
-// publishUpdate notifies Pub/Sub subscribers that the book identified with
-// the given ID has been added/modified.
-func publishUpdate(bookID int64) {
-	if bookshelf.PubsubClient == nil {
-		return
-	}
-
-	ctx := context.Background()
-
-	b, err := json.Marshal(bookID)
-	if err != nil {
-		return
-	}
-	topic := bookshelf.PubsubClient.Topic(bookshelf.PubsubTopicID)
-	_, err = topic.Publish(ctx, &pubsub.Message{Data: b}).Get(ctx)
-	log.Printf("Published update to Pub/Sub for Book ID %d: %v", bookID, err)
 }
 
 // http://blog.golang.org/error-handling-and-go
