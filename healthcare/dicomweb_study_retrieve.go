@@ -44,7 +44,9 @@ func dicomWebRetrieveStudy(w io.Writer, projectID, location, datasetID, dicomSto
 
 	parent := fmt.Sprintf("projects/%s/locations/%s/datasets/%s/dicomStores/%s", projectID, location, datasetID, dicomStoreID)
 
-	resp, err := storesService.RetrieveStudy(parent, dicomWebPath).Do()
+	call = storesService.RetrieveStudy(parent, dicomWebPath)
+	call.Header().Set("Accept", "multipart/related; type=application/dicom; transfer-syntax=*")
+	resp, err := call.Do()
 	if err != nil {
 		return fmt.Errorf("RetrieveStudy: %v", err)
 	}
